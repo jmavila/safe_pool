@@ -34,7 +34,7 @@ def f(x):
 
 def test_no_retry():
     """
-    Checks that one task could not give result but the pool finishes if a worker is killed
+   Check that all the tasks are executed when retry is disabled and a worker is killed
     """
     process_nr = 4
     pool = SafePool(processes=process_nr)
@@ -83,7 +83,7 @@ def test_multi_kill_with_retry():
 
 def test_multi_kill_no_retry():
     """
-    Check that all the tasks are executed when retry is enabled and a worker is killed
+    Check that all the tasks are executed when retry is disabled and a worker is killed
     """
     process_nr = 4
     pool = SafePool(processes=process_nr)
