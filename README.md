@@ -15,7 +15,6 @@ pool subprocesses. The OS job in charge of this is called `the OOM killer`. Lear
 - https://plumbr.io/blog/memory-leaks/out-of-memory-kill-process-or-sacrifice-child
 - http://www.win.tue.nl/~aeb/linux/lk/lk-9.html#ss9.6
 - https://www.hskupin.info/2010/06/17/how-to-fix-the-oom-killer-crashe-under-linux/
-- http://www.win.tue.nl/~aeb/linux/lk/lk-9.html#ss9.6
 
 What any programmer would expect is that the pool is smart enough to handle this situation, but I can confirm this is
 not the case in the multiprocessing Pool running in Python 2.7. The actual result is that your pool gets **hung** in
