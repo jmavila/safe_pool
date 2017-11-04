@@ -48,12 +48,13 @@ from signal import SIGKILL, SIGTERM, SIGSEGV, SIGINT, SIGPIPE
 
 HANDLED_SIGNALS = [SIGKILL, SIGTERM, SIGSEGV, SIGINT, SIGPIPE]
 
+
 #
 # Code run by worker processes
 #
 
-def worker(inqueue, outqueue, initializer=None, initargs=(), maxtasks=None, 
-            worker_tasks_log=None, worker_name=None):
+def worker(inqueue, outqueue, initializer=None, initargs=(), maxtasks=None,
+           worker_tasks_log=None, worker_name=None):
     """
         Extends multiprocessing.pool.worker adding worker log registry, that can be used to determine
         which task was running when a worker was killed 
@@ -118,7 +119,6 @@ class SafePool(Pool):
         self._retry_killed_tasks = retry_killed_tasks
         super(SafePool, self).__init__(processes, initializer, initargs, maxtasksperchild)
 
-        
     def _join_exited_workers(self):
         """Extends pool _join_exited_workers. 
         Detects When a worker is killed by either SIGKILL, SIGTERM, SIGSEGV, SIGNIT or SIGPIPE
@@ -161,10 +161,10 @@ class SafePool(Pool):
             w = self.Process(target=worker,
                              args=(self._inqueue, self._outqueue,
                                    self._initializer,
-                                   self._initargs, self._maxtasksperchild, 
+                                   self._initargs, self._maxtasksperchild,
                                    self._worker_tasks_log,
                                    worker_name)
-                            )
+                             )
             self._pool.append(w)
             w.name = worker_name
             w.daemon = True

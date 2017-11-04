@@ -3,6 +3,7 @@ import os
 import signal
 from safe_pool import SafePool
 from threading import Thread
+
 # import multiprocessing
 # import logging
 # logger = multiprocessing.log_to_stderr()
@@ -22,13 +23,13 @@ def kill_child(pool, max_processes=4, worker_nr=None):
     if not worker_nr:
         worker_nr = (max_processes / 2) + 1
     pid = pool._pool[worker_nr].pid  # kill one of the workers (about the half of the list)
-    thread = Thread(target = kill_process_thread, args=(pid, ))
-    thread.start() # notice we don't join to avoid blocking the main thread
+    thread = Thread(target=kill_process_thread, args=(pid,))
+    thread.start()  # notice we don't join to avoid blocking the main thread
 
 
 def f(x):
     time.sleep(F_TIMEOUT)
-    return x*x
+    return x * x
 
 
 def test_no_retry():
@@ -43,8 +44,8 @@ def test_no_retry():
     pool.join()
     results = res._value
     empty_results = [x for x in results if x is None]
-    assert(len(empty_results) == 1)
-    assert(len(pool.get_killed_tasks()) == 1)
+    assert (len(empty_results) == 1)
+    assert (len(pool.get_killed_tasks()) == 1)
 
 
 def test_retry():
@@ -59,7 +60,7 @@ def test_retry():
     pool.join()
     results = res._value
     empty_results = [x for x in results if x is None]
-    assert(not empty_results)
+    assert (not empty_results)
     assert (len(pool.get_killed_tasks()) == 1)
 
 
@@ -76,7 +77,7 @@ def test_multi_kill_with_retry():
     pool.join()
     results = res._value
     empty_results = [x for x in results if x is None]
-    assert(len(empty_results) == 0)
+    assert (len(empty_results) == 0)
     assert (len(pool.get_killed_tasks()) == 2)
 
 
@@ -93,5 +94,5 @@ def test_multi_kill_no_retry():
     pool.join()
     results = res._value
     empty_results = [x for x in results if x is None]
-    assert(len(empty_results) == 2)
+    assert (len(empty_results) == 2)
     assert (len(pool.get_killed_tasks()) == 2)
