@@ -62,7 +62,7 @@ You just need to instantiate the `SafePool` class and use it as the Pool class:
     pool = SafePool(processes=process_nr)
     res = pool.map(f, range(10))
 ```
-The mapping results will contain all your results, except the one corresponding to the killed task(s). They will be None.
+The mapping results will contain all your results, except the ones corresponding to the killed task(s). They will be None.
 
 Example of result for a multiprocessing the square of the items in a list:
 
