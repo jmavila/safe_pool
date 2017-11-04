@@ -88,7 +88,7 @@ a reasonable amount, retry the task.
 ```
 
 In this case, the result list (see example above) would be:
-```
+
 ```
 [0, 1, 4, None, 16, 25, 36, 49, 64, 81]
 ```
