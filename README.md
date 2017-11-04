@@ -7,8 +7,8 @@ processes (e.g.:OS).
 See the official code [here](https://github.com/python/cpython/blob/master/Lib/multiprocessing/pool.py)
 
 # Why?
-If your system memory is low and you start a multiprocessing pool, it can in some moment in the future your OS kills
-some of the pool subprocesses. This makes sense as the OS needs the kernel processes up and running, so when it needs
+If your system memory is low and you start a multiprocessing pool, the OS could kills some of the pool subprocesses.
+This makes sense as the OS needs the kernel processes up and running, so when it needs
 more memory to keep them up, it will kill other processes running. Unfortunately, one of that processes can be one of your
 pool subprocesses. The OS job in charge of this is called `the OOM killer`. Learn more in the next few links:
 
