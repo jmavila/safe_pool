@@ -16,11 +16,12 @@ def kill_process_thread(arg):
     os.kill(arg, signal.SIGKILL)
 
 
-def kill_child(pool, max_processes=4):
+def kill_child(pool, max_processes=4, worker_nr=None):
     if not max_processes or max_processes <= 2:
         raise ValueError('kill child expects at least 2 processes')
-    child_index = (max_processes / 2) + 1
-    pid = pool._pool[child_index].pid  # kill one of the workers (about the half of the list)
+    if not worker_nr:
+        worker_nr = (max_processes / 2) + 1
+    pid = pool._pool[worker_nr].pid  # kill one of the workers (about the half of the list)
     thread = Thread(target = kill_process_thread, args=(pid, ))
     thread.start() # notice we don't join to avoid blocking the main thread
 
@@ -57,11 +58,40 @@ def test_retry():
     pool.close()
     pool.join()
     results = res._value
-    empty_results = [x for x in results if x is None] 
+    empty_results = [x for x in results if x is None]
     assert(not empty_results)
     assert (len(pool.get_killed_tasks()) == 1)
 
 
-if __name__ == '__main__':
-    test_no_retry()
-    test_retry()
+def test_multi_kill_with_retry():
+    """
+    Check that all the tasks are executed when retry is enabled and a worker is killed
+    """
+    process_nr = 4
+    pool = SafePool(processes=process_nr, retry_killed_tasks=True)
+    res = pool.map_async(f, range(10))
+    kill_child(pool, max_processes=process_nr, worker_nr=3)
+    kill_child(pool, max_processes=process_nr, worker_nr=2)
+    pool.close()
+    pool.join()
+    results = res._value
+    empty_results = [x for x in results if x is None]
+    assert(len(empty_results) == 0)
+    assert (len(pool.get_killed_tasks()) == 2)
+
+
+def test_multi_kill_no_retry():
+    """
+    Check that all the tasks are executed when retry is enabled and a worker is killed
+    """
+    process_nr = 4
+    pool = SafePool(processes=process_nr)
+    res = pool.map_async(f, range(10))
+    kill_child(pool, max_processes=process_nr, worker_nr=3)
+    kill_child(pool, max_processes=process_nr, worker_nr=2)
+    pool.close()
+    pool.join()
+    results = res._value
+    empty_results = [x for x in results if x is None]
+    assert(len(empty_results) == 2)
+    assert (len(pool.get_killed_tasks()) == 2)

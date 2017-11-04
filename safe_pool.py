@@ -43,8 +43,10 @@ __all__ = ['SafePool']
 from multiprocessing import Process, Manager
 from multiprocessing.util import debug
 from multiprocessing.pool import Pool
-import signal
+from uuid import uuid4
+from signal import SIGKILL, SIGTERM, SIGSEGV, SIGINT, SIGPIPE
 
+HANDLED_SIGNALS = [SIGKILL, SIGTERM, SIGSEGV, SIGINT, SIGPIPE]
 
 #
 # Code run by worker processes
@@ -129,8 +131,7 @@ class SafePool(Pool):
             if worker.exitcode is not None:
                 debug('cleaning up worker %d' % i)
                 worker.join()
-                if abs(worker.exitcode) in [signal.SIGKILL, signal.SIGTERM, signal.SIGSEGV, signal.SIGINT,
-                                            signal.SIGPIPE]:
+                if abs(worker.exitcode) in HANDLED_SIGNALS:
                     debug('Worker died: ' + str(worker.name))
                     pending_task = self._worker_tasks_log.get(worker.name)
                     if self._retry_killed_tasks:
@@ -144,7 +145,8 @@ class SafePool(Pool):
                                 break
 
                     elif self._cache and len(self._cache) == 1:  # just skip the result
-                        self._cache[0]._number_left -= 1
+                        cache_index = list(self._cache)[0]
+                        self._cache[cache_index]._number_left -= 1
                         debug('Skipping result of faulty worker: ' + str(worker.name))
                 cleaned = True
                 del self._pool[i]
@@ -155,7 +157,7 @@ class SafePool(Pool):
         for use after reaping workers which have exited.
         """
         for i in range(self._processes - len(self._pool)):
-            worker_name = 'PoolWorker-{}'.format(i)
+            worker_name = uuid4().hex
             w = self.Process(target=worker,
                              args=(self._inqueue, self._outqueue,
                                    self._initializer,
