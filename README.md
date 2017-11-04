@@ -8,13 +8,14 @@ See https://github.com/python/cpython/blob/master/Lib/multiprocessing/pool.py
 
 # Why?
 If your system memory is low and you start a multiprocessing pool, it can in some moment in the future your OS kills
-some of the pool subprocesses. This makes sense as the OS needs it kernel processes up and running, so when it needs
-memory to keep them up, it will kill other processes running. Unfortunately, one of that processes can be one of your
+some of the pool subprocesses. This makes sense as the OS needs the kernel processes up and running, so when it needs
+more memory to keep them up, it will kill other processes running. Unfortunately, one of that processes can be one of your
 pool subprocesses. The OS job in charge of this is called `the OOM killer`. Learn more in the next few links:
 
 - https://plumbr.io/blog/memory-leaks/out-of-memory-kill-process-or-sacrifice-child
 - http://www.win.tue.nl/~aeb/linux/lk/lk-9.html#ss9.6
 - https://www.hskupin.info/2010/06/17/how-to-fix-the-oom-killer-crashe-under-linux/
+- http://www.win.tue.nl/~aeb/linux/lk/lk-9.html#ss9.6
 
 What any programmer would expect is that the pool is smart enough to handle this situation, but I can confirm this is
 not the case in the multiprocessing Pool running in Python 2.7. The actual result is that your pool gets **hung** in
@@ -34,11 +35,14 @@ Unfortunately this fixes are 1) not merged, and b) not enough to really fix the 
 - 2) the option to retry faulty tasks.
 - 3) the option to know which are the faulty tasks.
 
-Recommended readings about O:
-
-- http://www.win.tue.nl/~aeb/linux/lk/lk-9.html#ss9.6
 
 # How is this fixed?
+
+Firstly, I'd like to clarity this will not fix the "Out Of Memory" (OOM) error at all. For that, you need either optimizing
+your code, buy more memory or both of them. Even, you could think about switching to paralelize your tasks using some
+of the nice libraries out there as Celery or ZeroMQ.
+
+So, this were my mains goals with this patch:
 
 - 1) Locate the core reason of the hung. The current thread responsible of updating the results gets frozen because there's a
 critical section around a shared result variable `number_left` (See the `MapResult` class in the original multiprocessing
@@ -46,8 +50,8 @@ code). This threads expect this number to be zero in order to notify the workers
 The fix is as simple as decrementing that variable whenever a worker dies from the workers handling pool.
 This makes sense because the results threads has no other way to know some woker was killed.
 
-- 2) Subclassing the original `Pool` class with a new `SafePool`. This class only overrides the methods involve in the bug
-(the commented code is less than 200 lines).
+- 2) Subclassing the original `Pool` class with a new `SafePool` that will not hang even if children processes are sacrified.
+ (FYI: subclassing allowed me to write less than 10 lines of real changes comparing with the former Pool class!).
 
 
 # Usage
