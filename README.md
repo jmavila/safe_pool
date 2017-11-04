@@ -1,8 +1,8 @@
 # Safe Pool - Python Multiprocessing Pool Extension
 
 Extension for the standard Python Multiprocessing Pool class, helps a better handling of unusual exceptions,
-more specifically it handles the situation when a subprocess of the pool receives the SIGKILL signal from other
-processes (e.g.:OS).
+more specifically it handles the situation when a subprocess of the pool receives the SIGKILL signal (and other similar ones)
+from other processes (e.g.:OS).
 
 See the official code [here](https://github.com/python/cpython/blob/master/Lib/multiprocessing/pool.py)
 
