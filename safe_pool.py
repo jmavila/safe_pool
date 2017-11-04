@@ -128,16 +128,19 @@ class SafePool(Pool):
         cleaned = False
         for i in reversed(range(len(self._pool))):
             worker = self._pool[i]
+            debug('Worker exitcode: ' + str(worker.exitcode))
             if worker.exitcode is not None:
                 debug('cleaning up worker %d' % i)
                 worker.join()
                 if abs(worker.exitcode) in HANDLED_SIGNALS:
+                    debug('*'*10)
+                    debug(str(HANDLED_SIGNALS))
                     debug('Worker died: ' + str(worker.name))
                     pending_task = self._worker_tasks_log.get(worker.name)
                     if self._retry_killed_tasks:
                         debug('It was assigned to task: ' + str(pending_task))
                         if pending_task:
-                            debug('RETRYING TASK: ' + str(pending_task))
+                            debug('Retrying task: ' + str(pending_task))
                             try:
                                 self._quick_put(pending_task)
                             except IOError:
@@ -145,9 +148,9 @@ class SafePool(Pool):
                                 break
 
                     elif self._cache and len(self._cache) == 1:  # just skip the result
-                        cache_index = list(self._cache)[0]
-                        self._cache[cache_index]._number_left -= 1
-                        debug('Skipping result of faulty worker: ' + str(worker.name))
+                            cache_index = list(self._cache)[0]
+                            self._cache[cache_index]._number_left -= 1
+                            debug('Skipping result of faulty worker: ' + str(worker.name))
                 cleaned = True
                 del self._pool[i]
         return cleaned

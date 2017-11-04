@@ -1,8 +1,10 @@
 import time
 import os
 import signal
-from safe_pool import SafePool
 from threading import Thread
+import sys
+from safe_pool import SafePool
+
 
 # import multiprocessing
 # import logging
@@ -96,3 +98,24 @@ def test_multi_kill_no_retry():
     empty_results = [x for x in results if x is None]
     assert (len(empty_results) == 2)
     assert (len(pool.get_killed_tasks()) == 2)
+
+
+def force_exit(value):
+    if value:
+        sys.exit(15)
+
+
+# TODO: FIX TEST
+# TODO: check that multiprocessing lib tests are passing with for SafePool
+def test_exit_no_retry():
+    process_nr = 4
+    pool = SafePool(processes=process_nr)
+    cases = [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
+    res = pool.map_async(f, cases)
+    pool.close()
+    pool.join()
+    results = res._value
+    empty_results = [x for x in results if x is None]
+    assert (len(empty_results) == 1)
+    assert (len(pool.get_killed_tasks()) == 1)
+
