@@ -5,7 +5,7 @@
 #
 # safepool.py
 #
-# Copyright (c) 2017, J Ávila
+# Copyright (c) 2017, Juan Ávila
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -43,8 +43,8 @@ __all__ = ['SafePool']
 from multiprocessing import Process, Manager
 from multiprocessing.util import debug
 from multiprocessing.pool import Pool
+import signal
 
-SIG_KILL = -9
 
 #
 # Code run by worker processes
@@ -86,15 +86,18 @@ def worker(inqueue, outqueue, initializer=None, initargs=(), maxtasks=None,
             result = (True, func(*args, **kwds))
         except Exception, e:
             result = (False, e)
+        if worker_tasks_log is not None and worker_name and worker_name in worker_tasks_log:
+            del worker_tasks_log[worker_name]
         put((job, i, result))
         completed += 1
     debug('worker exiting after %d tasks' % completed)
+
 
 #
 # Class representing a process pool
 #
 class SafePool(Pool):
-    '''
+    """
     Extends multiprocessing.pool.Pool:
     - new pool param: retry_killed_tasks: allow to retry killed tasks
     - new pool attr: worker_tasks_log a Manager.dict() to keep track the latest task executed by each worker
@@ -102,21 +105,23 @@ class SafePool(Pool):
     -  a) worker exited with kill error: decrement cache counter to prevent an infinite loop (infamous handling bug)
     -  b) if 'retry_killed_tasks' is enabled, the worker task killed is reappended to the in-queue so it will be picked 
           up by one of the active workers.
-    '''
+    """
     Process = Process
 
     def __init__(self, processes=None, initializer=None, initargs=(),
                  maxtasksperchild=None, retry_killed_tasks=False):
         """Extends Pool with a shared dict 'worker_tasks_log', used to log tasks executed by workers
         """
-        self.worker_tasks_log = Manager().dict()
-        self.retry_killed_tasks = retry_killed_tasks
+        self._worker_tasks_log = Manager().dict()
+        self._retry_killed_tasks = retry_killed_tasks
         super(SafePool, self).__init__(processes, initializer, initargs, maxtasksperchild)
 
         
     def _join_exited_workers(self):
-        """Extends pool _join_exited_workers. When a worker is killed (for now only SIG_KILL) is considered,
-            it will 
+        """Extends pool _join_exited_workers. 
+        Detects When a worker is killed by either SIGKILL, SIGTERM, SIGSEGV, SIGNIT or SIGPIPE
+        If the pool is set to retry it will put in the input queue the pending task to re-execute it
+        Else, the left counter is decremented so the pool can finish its execution in a normal way
         """
         cleaned = False
         for i in reversed(range(len(self._pool))):
@@ -124,18 +129,20 @@ class SafePool(Pool):
             if worker.exitcode is not None:
                 debug('cleaning up worker %d' % i)
                 worker.join()
-                if worker.exitcode == SIG_KILL:
-                    debug('Worker died: ' + str(worker.name))  
-                    if self.retry_killed_tasks:                  
-                        missing_task = self.worker_tasks_log.get(worker.name)
-                        debug('It was assigned to task: ' + str(missing_task))
-                        if missing_task:
-                            debug('RETRYING TASK: ' + str(missing_task))
+                if abs(worker.exitcode) in [signal.SIGKILL, signal.SIGTERM, signal.SIGSEGV, signal.SIGINT,
+                                            signal.SIGPIPE]:
+                    debug('Worker died: ' + str(worker.name))
+                    pending_task = self._worker_tasks_log.get(worker.name)
+                    if self._retry_killed_tasks:
+                        debug('It was assigned to task: ' + str(pending_task))
+                        if pending_task:
+                            debug('RETRYING TASK: ' + str(pending_task))
                             try:
-                                self._quick_put(missing_task)
+                                self._quick_put(pending_task)
                             except IOError:
                                 debug('could not put task on queue')
-                                break                                            
+                                break
+
                     elif self._cache and len(self._cache) == 1:  # just skip the result
                         self._cache[0]._number_left -= 1
                         debug('Skipping result of faulty worker: ' + str(worker.name))
@@ -153,7 +160,7 @@ class SafePool(Pool):
                              args=(self._inqueue, self._outqueue,
                                    self._initializer,
                                    self._initargs, self._maxtasksperchild, 
-                                   self.worker_tasks_log, 
+                                   self._worker_tasks_log,
                                    worker_name)
                             )
             self._pool.append(w)
@@ -161,3 +168,12 @@ class SafePool(Pool):
             w.daemon = True
             w.start()
             debug('added worker' + str(w.name))
+
+    def get_killed_tasks(self):
+        """
+        Returns the number of failing tasks (because of workers died)        
+        :return: list of tuples with task info. Each task looks as a tuple with tuple with task function 
+                    at 1st position and arguments as 2nd one:
+            (<function __main__.f>, (30,)),)                    
+        """
+        return [task[3][0] for task in self._worker_tasks_log.values()]

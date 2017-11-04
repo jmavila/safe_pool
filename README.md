@@ -4,7 +4,7 @@ Extension for the standard Python Multiprocessing Pool class, helps a better han
 more specifically it handles the situation when a subprocess of the pool receives the SIGKILL signal from other
 processes (e.g.:OS).
 
-See https://github.com/python/cpython/blob/master/Lib/multiprocessing/pool.py
+See the official code [here](https://github.com/python/cpython/blob/master/Lib/multiprocessing/pool.py)
 
 # Why?
 If your system memory is low and you start a multiprocessing pool, it can in some moment in the future your OS kills
@@ -29,7 +29,7 @@ the Python Issue tracker:
 - https://bugs.python.org/issue24927
 - https://bugs.python.org/issue22393
 
-Unfortunately this fixes are 1) not merged, and b) not enough to really fix the problem. What we need is:
+Unfortunately those fixes are 1) not merged, and b) not enough to really fix the problem. What we need is:
 
 - 1) the pool needs to finish even if subprocesses are killed and die.
 - 2) the option to retry faulty tasks.
@@ -42,13 +42,13 @@ Firstly, I'd like to clarity this will not fix the "Out Of Memory" (OOM) error a
 your code, buy more memory or both of them. Even, you could think about switching to paralelize your tasks using some
 of the nice libraries out there as Celery or ZeroMQ.
 
-So, this were my mains goals with this patch:
+So, these are my main goals with this patch:
 
 - 1) Locate the core reason of the hung. The current thread responsible of updating the results gets frozen because there's a
 critical section around a shared result variable `number_left` (See the `MapResult` class in the original multiprocessing
 code). This threads expect this number to be zero in order to notify the workers to finish and join to the main thread.
 The fix is as simple as decrementing that variable whenever a worker dies from the workers handling pool.
-This makes sense because the results threads has no other way to know some woker was killed.
+This makes sense because the results threads has no other way to know some workers were killed.
 
 - 2) Subclassing the original `Pool` class with a new `SafePool` that will not hang even if children processes are sacrified.
  (FYI: subclassing allowed me to write less than 10 lines of real changes comparing with the former Pool class!).
@@ -76,11 +76,12 @@ list. This is way better than having no result at all and a stalled process runn
 
 # Extra features
 
-## Retry killed tasks:
+## Retry killed tasks
 
 Be careful with this. If your tasks were killed, it usually means your OS is overloaded and has not enough memory.
-In future releases I have thought in making this smarter: checking the actual memory availability, and if it is
-a reasonable amount, retry the task.
+Knowing that, you can use the `retry_killed_tasks` when instantiating the SafePool object.
+In future releases  it could be smarter: checking the actual memory availability, and if it is a
+reasonable amount, retry the task.
 
 ```
     pool = SafePool(processes=process_nr, retry_killed_tasks=True)
@@ -93,7 +94,17 @@ In this case, the result list (see example above) would be:
 [0, 1, 4, None, 16, 25, 36, 49, 64, 81]
 ```
 
+## Get killed tasks:
+
+You can get the list of tasks that were killed using the method:
+
+```
+    pool.get_killed_tasks() # list with tuples with function and arguments: (<function __main__.f>, (30,)),)
+```
+
+
 # Future work
 
-- smarter retry option: check OS memory, rety only in case it is safe.
-- capture more signals, for now only SIGKILL is handled, but it's easy to add more like SIGTERM.
+- smarter retry option: check OS memory, retry only in case it is safe. Consider max attempts.
+- prevent a sub-process exception to stop the pool. Use the same approach as when workers are killed.
+- job stats, when each task started and finished
