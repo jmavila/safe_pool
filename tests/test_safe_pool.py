@@ -1,117 +1,39 @@
-import time
-import os
 import signal
-from threading import Thread
+from collections import defaultdict
 import sys
 from safe_pool import SafePool, SubProcessKilledException
 
 
-# import multiprocessing
-# import logging
-# logger = multiprocessing.log_to_stderr()
-# logger.setLevel(logging.DEBUG)
+class ExitCallback(object):
+    """
+        Utility class used to simulate a task receiving a parameter 
+        that will exit with `exit_code` if value is equal to `fail_value` 
+        if the attempt nr is less than attempts_failing
+    """
+    def __init__(self, exit_code=0, fail_value=None, attempts_failing=1):
+        self.attempts_cache = defaultdict(int)
+        self.fail_value = fail_value
+        self.attempts_failing = attempts_failing
+        self.signal_code = exit_code
 
-F_TIMEOUT = 0.2
-
-# TODO: make faster tests: use force_exit instead of kill_child for all the tests
-
-def kill_process_thread(arg):
-    time.sleep(F_TIMEOUT / 2)
-    os.kill(arg, signal.SIGKILL)
-
-
-def kill_child(pool, max_processes=4, worker_nr=None):
-    if not max_processes or max_processes <= 2:
-        raise ValueError('kill child expects at least 2 processes')
-    if not worker_nr:
-        worker_nr = (max_processes / 2) + 1
-    pid = pool._pool[worker_nr].pid  # kill one of the workers (about the half of the list)
-    thread = Thread(target=kill_process_thread, args=(pid,))
-    thread.start()  # notice we don't join to avoid blocking the main thread
-
-
-def f(x):
-    time.sleep(F_TIMEOUT)
-    return x * x
+    def run(self, value):
+        self.attempts_cache[value] += 1
+        if value == self.fail_value and self.attempts_failing and self.attempts_cache[value] <= self.attempts_failing:
+            sys.exit(self.signal_code)
+        return value
 
 
 def test_no_retry():
     """
-   Check that all the tasks are executed when retry is disabled and a worker is killed
+        Checks that all the tasks are executed when retry is disabled and a worker is killed
     """
     process_nr = 4
     pool = SafePool(processes=process_nr)
-    res = pool.map_async(f, range(10))  # using map_async instead of map to help test async killing a subprocess
-    kill_child(pool, max_processes=process_nr)
-    pool.close()
-    pool.join()
-    results = res._value
-    empty_results = [x for x in results if x is None]
-    assert (len(empty_results) == 1)
-    assert (len(pool.get_killed_tasks()) == 1)
+    exit_cb = ExitCallback(exit_code=signal.SIGKILL, fail_value=0, attempts_failing=1)
 
-
-def test_retry():
-    """
-    Check that all the tasks are executed when retry is enabled and a worker is killed
-    """
-    process_nr = 4
-    pool = SafePool(processes=process_nr, retry_killed_tasks=True)
-    res = pool.map_async(f, range(10))
-    kill_child(pool, max_processes=process_nr)
-    pool.close()
-    pool.join()
-    results = res._value
-    empty_results = [x for x in results if x is None]
-    assert (not empty_results)
-    assert (len(pool.get_killed_tasks()) == 1)
-
-
-def test_multi_kill_with_retry():
-    """
-    Check that all the tasks are executed when retry is enabled and a worker is killed
-    """
-    process_nr = 4
-    pool = SafePool(processes=process_nr, retry_killed_tasks=True)
-    res = pool.map_async(f, range(10))
-    kill_child(pool, max_processes=process_nr, worker_nr=3)
-    kill_child(pool, max_processes=process_nr, worker_nr=2)
-    pool.close()
-    pool.join()
-    results = res._value
-    empty_results = [x for x in results if x is None]
-    assert (len(empty_results) == 0)
-    assert (len(pool.get_killed_tasks()) == 2)
-
-
-def test_multi_kill_no_retry():
-    """
-    Check that all the tasks are executed when retry is disabled and a worker is killed
-    """
-    process_nr = 4
-    pool = SafePool(processes=process_nr)
-    res = pool.map_async(f, range(10))
-    kill_child(pool, max_processes=process_nr, worker_nr=3)
-    kill_child(pool, max_processes=process_nr, worker_nr=2)
-    pool.close()
-    pool.join()
-    results = res._value
-    empty_results = [x for x in results if x is None]
-    assert (len(empty_results) == 2)
-    assert (len(pool.get_killed_tasks()) == 2)
-
-
-def force_exit(value):
-    if not value:
-        sys.exit(15)
-    return value * value
-
-
-def test_exit_no_retry():
-    process_nr = 4
-    pool = SafePool(processes=process_nr)
     cases = [0, 20, 0, 40, 50, 0, 60, 0, 80, 0, 100, 0]
-    res = pool.map_async(force_exit, cases)
+    res = pool.map_async(exit_cb.run, cases, retry_killed_tasks=False)
+
     pool.close()
     pool.join()
     results = res._value
@@ -120,33 +42,59 @@ def test_exit_no_retry():
     assert (len(pool.get_killed_tasks()) == 6)
 
 
+def test_retry():
+    """
+        Checks that all the tasks are executed when retry is enabled and a worker is killed
+    """
+    process_nr = 4
+    pool = SafePool(processes=process_nr, retry_killed_tasks=True)
+    exit_cb = ExitCallback(exit_code=signal.SIGKILL, fail_value=0, attempts_failing=1)
+
+    cases = [0, 20, 0, 40, 50, 0, 60, 0, 80, 0, 100, 0]
+    res = pool.map_async(exit_cb.run, cases)
+
+    pool.close()
+    pool.join()
+    results = res._value
+    empty_results = [x for x in results if x is None]
+    assert (not empty_results)
+    assert (len(pool.get_killed_tasks()) == 6)
+
+
+def test_multi_retry():
+    """
+        Checks that when the workers fail several times processing the same task
+        If retry is enabled we should get all the results
+    """
+    process_nr = 4
+    pool = SafePool(processes=process_nr, retry_killed_tasks=True)
+    exit_cb = ExitCallback(exit_code=signal.SIGKILL, fail_value=0, attempts_failing=2)
+
+    cases = [0, 20, 0, 40, 50, 0, 60, 0, 80, 0, 100, 0]
+    res = pool.map_async(exit_cb.run, cases)
+
+    pool.close()
+    pool.join()
+    results = res._value
+    empty_results = [x for x in results if x is None]
+    assert (not empty_results)
+    assert (len(pool.get_killed_tasks()) == 6)  # each task will fail twice
+
+
 def test_abort():
+    """
+        Checks the pool stops and raise an Exception when `abort_when_killed` is enabled
+    """
     process_nr = 4
     pool = SafePool(processes=process_nr, abort_when_killed=True)
+    exit_cb = ExitCallback(exit_code=signal.SIGKILL, fail_value=0, attempts_failing=1)
+
     cases = [0, 20, 0, 40, 50, 0, 60, 0, 80, 0, 100, 0]
-    res = pool.map_async(force_exit, cases)
+    res = pool.map_async(exit_cb.run, cases)
     pool.close()
     pool.join()
     result = res._value
     assert (isinstance(result, SubProcessKilledException))
 
 
-# TODO: to fix the next commented test, we need to add support for a maximum number of task retries (force_exit always
-# generates a kill signal). Possible solution to implement:
-# - add a new SafePool param: min_memory
-# - add a new SafePool param: memory_timeout
-# - add a while loop in  _join_exited_workers() checking available memory until available mem> min_memory or
-#   the timeout expires
-# def test_exit_with_retry():
-#     process_nr = 4
-#     pool = SafePool(processes=process_nr, retry_killed_tasks=True)
-#     cases = [0, 20, 0, 40, 50, 0, 60, 0, 80, 0, 100, 0]
-#     res = pool.map_async(force_exit, cases)
-#     pool.close()
-#     pool.join()
-#     results = res._value
-#     print 'RESULTS: ', results
-#     empty_results = [x for x in results if x is None]
-#     assert (len(empty_results) == 6)
-#     assert (len(pool.get_killed_tasks()) == 6)
 

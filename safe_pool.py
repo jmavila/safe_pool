@@ -81,6 +81,8 @@ def worker(inqueue, outqueue, initializer=None, initargs=(), maxtasks=None,
             debug('worker got sentinel -- exiting')
             break
 
+        debug('worker processing task: ' + str(task))
+
         job, i, func, args, kwds = task
 
         if worker_tasks_log is not None and worker_name:
