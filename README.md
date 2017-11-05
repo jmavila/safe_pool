@@ -18,7 +18,7 @@ pool sub-processes. The OS job in charge of this is called `the OOM killer`. Lea
 - https://www.hskupin.info/2010/06/17/how-to-fix-the-oom-killer-crashe-under-linux/
 
 What any programmer would expect is that the Python2.7 multiprocessing pool is smart enough to handle this situation,
-but it actually is not the case. The result is that your pool gets **hung**or **stuck** in
+but it actually is not the case. The result is that your pool gets **hung** or **stuck** in
 an infinite loop, so the pool execution never finishes. This can bring you lots of headaches and hours of debugging to
 notice the exact reason why this happens and how to fix it. This is the reason I decided to fix this, and hopefully this
 effort will help many other people as frustrated as me :)
