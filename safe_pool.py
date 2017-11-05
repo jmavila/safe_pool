@@ -42,7 +42,7 @@ __all__ = ['SafePool']
 
 from multiprocessing import Process, Manager
 from multiprocessing.util import debug
-from multiprocessing.pool import Pool
+from multiprocessing.pool import Pool, MapResult, RUN, mapstar
 from uuid import uuid4
 from signal import SIGKILL, SIGTERM, SIGSEGV, SIGINT, SIGPIPE
 
@@ -112,11 +112,12 @@ class SafePool(Pool):
     Process = Process
 
     def __init__(self, processes=None, initializer=None, initargs=(),
-                 maxtasksperchild=None, retry_killed_tasks=False):
+                 maxtasksperchild=None, retry_killed_tasks=False, abort_when_killed=False):
         """Extends Pool with a shared dict 'worker_tasks_log', used to log tasks executed by workers
         """
         self._worker_tasks_log = Manager().dict()
         self._retry_killed_tasks = retry_killed_tasks
+        self._abort_when_killed = abort_when_killed
         super(SafePool, self).__init__(processes, initializer, initargs, maxtasksperchild)
 
     def _join_exited_workers(self):
@@ -128,7 +129,7 @@ class SafePool(Pool):
         cleaned = False
         for i in reversed(range(len(self._pool))):
             worker = self._pool[i]
-            debug('Worker exitcode: ' + str(worker.exitcode))
+            debug('Worker {} exitcode: {}'.format(worker.name, worker.exitcode))
             if worker.exitcode is not None:
                 debug('cleaning up worker %d' % i)
                 worker.join()
@@ -149,11 +150,35 @@ class SafePool(Pool):
 
                     elif self._cache and len(self._cache) == 1:  # just skip the result
                             cache_index = list(self._cache)[0]
-                            self._cache[cache_index]._number_left -= 1
                             debug('Skipping result of faulty worker: ' + str(worker.name))
+                            if self._abort_when_killed:
+                                self._cache[cache_index].abort_workers()
+                            else:
+                                self._cache[cache_index].handle_killed_worker()
                 cleaned = True
                 del self._pool[i]
         return cleaned
+
+    def map_async(self, func, iterable, chunksize=None, callback=None):
+        '''
+        Asynchronous equivalent of `map()` builtin
+        '''
+        assert self._state == RUN
+        if not hasattr(iterable, '__len__'):
+            iterable = list(iterable)
+
+        if chunksize is None:
+            chunksize, extra = divmod(len(iterable), len(self._pool) * 4)
+            if extra:
+                chunksize += 1
+        if len(iterable) == 0:
+            chunksize = 0
+
+        task_batches = Pool._get_tasks(func, iterable, chunksize)
+        result = SafeMapResult(self._cache, chunksize, len(iterable), callback)
+        self._taskqueue.put((((result._job, i, mapstar, (x,), {})
+                              for i, x in enumerate(task_batches)), None))
+        return result
 
     def _repopulate_pool(self):
         """Bring the number of pool processes up to the specified number,
@@ -182,3 +207,50 @@ class SafePool(Pool):
             (<function __main__.f>, (30,)),)                    
         """
         return [task[3][0] for task in self._worker_tasks_log.values()]
+
+
+class SubProcessKilledException(Exception):
+    pass
+
+
+class SafeMapResult(MapResult):
+    """
+    Extends MapResult with the method `handle_killed_worker` that is called from the Worker thread
+    when it detects that a worker has died unexpectedly
+    """
+
+    def __init__(self, cache, chunksize, length, callback):
+        super(SafeMapResult, self).__init__(cache, chunksize, length, callback)
+
+    def handle_killed_worker(self):
+        """
+        Based on the code of MapResult._set, it decrements the number of pending tasks and
+        checks if there's something else to do. If nothing remains, it deletes the cache (this will
+        stop the workers thread and notify the rest of the threads (results, tasks) to finish.
+        """
+        self._number_left -= 1
+        if self._number_left == 0:
+            if self._callback:
+                self._callback(self._value)
+            del self._cache[self._job]
+            self._cond.acquire()
+            try:
+                self._ready = True
+                self._cond.notify()
+            finally:
+                self._cond.release()
+
+    def abort_workers(self):
+        """
+        Stop execution of all the workers and set a `SubProcessKilledException` as the result
+        """
+        self._success = False
+        self._value = SubProcessKilledException('Process received a kill signal. It may be related to a lack of OS Memory')
+        del self._cache[self._job]
+        self._cond.acquire()
+        try:
+            self._ready = True
+            self._cond.notify()
+        finally:
+            self._cond.release()
+

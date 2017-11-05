@@ -3,7 +3,7 @@ import os
 import signal
 from threading import Thread
 import sys
-from safe_pool import SafePool
+from safe_pool import SafePool, SubProcessKilledException
 
 
 # import multiprocessing
@@ -13,6 +13,7 @@ from safe_pool import SafePool
 
 F_TIMEOUT = 0.2
 
+# TODO: make faster tests: use force_exit instead of kill_child for all the tests
 
 def kill_process_thread(arg):
     time.sleep(F_TIMEOUT / 2)
@@ -101,21 +102,51 @@ def test_multi_kill_no_retry():
 
 
 def force_exit(value):
-    if value:
+    if not value:
         sys.exit(15)
+    return value * value
 
 
-# TODO: FIX TEST
-# TODO: check that multiprocessing lib tests are passing with for SafePool
 def test_exit_no_retry():
     process_nr = 4
     pool = SafePool(processes=process_nr)
-    cases = [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
-    res = pool.map_async(f, cases)
+    cases = [0, 20, 0, 40, 50, 0, 60, 0, 80, 0, 100, 0]
+    res = pool.map_async(force_exit, cases)
     pool.close()
     pool.join()
     results = res._value
     empty_results = [x for x in results if x is None]
-    assert (len(empty_results) == 1)
-    assert (len(pool.get_killed_tasks()) == 1)
+    assert (len(empty_results) == 6)
+    assert (len(pool.get_killed_tasks()) == 6)
+
+
+def test_abort():
+    process_nr = 4
+    pool = SafePool(processes=process_nr, abort_when_killed=True)
+    cases = [0, 20, 0, 40, 50, 0, 60, 0, 80, 0, 100, 0]
+    res = pool.map_async(force_exit, cases)
+    pool.close()
+    pool.join()
+    result = res._value
+    assert (isinstance(result, SubProcessKilledException))
+
+
+# TODO: to fix the next commented test, we need to add support for a maximum number of task retries (force_exit always
+# generates a kill signal). Possible solution to implement:
+# - add a new SafePool param: min_memory
+# - add a new SafePool param: memory_timeout
+# - add a while loop in  _join_exited_workers() checking available memory until available mem> min_memory or
+#   the timeout expires
+# def test_exit_with_retry():
+#     process_nr = 4
+#     pool = SafePool(processes=process_nr, retry_killed_tasks=True)
+#     cases = [0, 20, 0, 40, 50, 0, 60, 0, 80, 0, 100, 0]
+#     res = pool.map_async(force_exit, cases)
+#     pool.close()
+#     pool.join()
+#     results = res._value
+#     print 'RESULTS: ', results
+#     empty_results = [x for x in results if x is None]
+#     assert (len(empty_results) == 6)
+#     assert (len(pool.get_killed_tasks()) == 6)
 
