@@ -139,3 +139,6 @@ You can get the list of tasks that were killed using the method:
 - add option to prevent a sub-process exception to stop the pool. Use the same approach as when workers are killed
 and restarted with the `retry_killed_tasks` option.
 - job stats, when each task started and finished
+
+# Update 3/5/18
+Use joblib!
